@@ -1,6 +1,6 @@
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 
@@ -36,8 +36,9 @@ def append_to_sheet(structured: dict):
             "日付", "カテゴリ", "実施したこと", "結果・気づき",
             "障害・ペンディング", "次のアクション", "エネルギー", "パターン仮説"
         ], 1)
+    JST = timezone(timedelta(hours=9))
     sheet.append_row([
-        datetime.now().strftime("%Y-%m-%d %H:%M"),
+        datetime.now(JST).strftime("%Y-%m-%d %H:%M"),
         ", ".join(structured.get("category", [])),
         ", ".join(structured.get("actions", [])),
         ", ".join(structured.get("outcomes", [])),
