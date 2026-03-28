@@ -1,8 +1,8 @@
 import os
 import json
-import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
+from contextlib import asynccontextmanager
 
 import anthropic
 import gspread
@@ -14,7 +14,6 @@ import uvicorn
 
 load_dotenv()
 
-# --- 設定 ---
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
@@ -52,7 +51,6 @@ def structure_with_claude(text: str) -> dict:
         }]
     )
     raw = response.content[0].text
-    # JSON部分だけ抽出
     start = raw.find("{")
     end = raw.rfind("}") + 1
     return json.loads(raw[start:end])
@@ -60,14 +58,11 @@ def structure_with_claude(text: str) -> dict:
 # --- Sheets に書き込み ---
 def append_to_sheet(raw_text: str, structured: dict):
     sheet = get_sheet()
-    
-    # ヘッダーがなければ追加
     if sheet.row_count == 0 or sheet.cell(1, 1).value != "日付":
         sheet.insert_row([
             "日付", "カテゴリ", "実施したこと", "結果・気づき",
             "障害・ペンディング", "次のアクション", "エネルギー", "原文"
         ], 1)
-    
     sheet.append_row([
         datetime.now().strftime("%Y-%m-%d %H:%M"),
         ", ".join(structured.get("category", [])),
@@ -83,41 +78,36 @@ def append_to_sheet(raw_text: str, structured: dict):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     await update.message.reply_text("受け取りました。処理中...")
-    
     try:
         structured = structure_with_claude(text)
         append_to_sheet(text, structured)
-        
         reply = f"""✅ 記録しました
 
 📂 カテゴリ: {', '.join(structured.get('category', []))}
 ✅ 実施: {', '.join(structured.get('actions', []))}
 💡 気づき: {', '.join(structured.get('outcomes', []))}
 ⚡ エネルギー: {structured.get('energy_level', '-')}/5"""
-
         if structured.get("blockers"):
             reply += f"\n🔴 ペンディング: {', '.join(structured['blockers'])}"
         if structured.get("next_actions"):
             reply += f"\n➡️ 次のアクション: {', '.join(structured['next_actions'])}"
-
         await update.message.reply_text(reply)
-    
     except Exception as e:
         await update.message.reply_text(f"エラーが発生しました: {str(e)}")
 
-# --- FastAPI + Telegram 起動 ---
-app = FastAPI()
-telegram_app = Application.builder().token(TELEGRAM_TOKEN).build()
+# --- Application初期化 ---
+telegram_app = Application.builder().token(TELEGRAM_TOKEN).updater(None).build()
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-@app.on_event("startup")
-async def startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     await telegram_app.initialize()
     await telegram_app.start()
-
-@app.on_event("shutdown")
-async def shutdown():
+    yield
     await telegram_app.stop()
+    await telegram_app.shutdown()
+
+app = FastAPI(lifespan=lifespan)
 
 @app.post(f"/webhook/{TELEGRAM_TOKEN}")
 async def webhook(request: Request):
@@ -129,6 +119,3 @@ async def webhook(request: Request):
 @app.get("/")
 def health():
     return {"status": "ok"}
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)
