@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+python-telegram-bot==20.7
+anthropic
+gspread
+google-auth
+python-dotenv
+httpx
