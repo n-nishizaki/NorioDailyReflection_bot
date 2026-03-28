@@ -22,7 +22,8 @@ SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 # --- Google Sheets 初期化 ---
 def get_sheet():
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    creds = Credentials.from_service_account_file("credentials.json", scopes=scopes)
+    creds_json = json.loads(os.getenv("GOOGLE_CREDENTIALS_JSON"))
+    creds = Credentials.from_service_account_info(creds_json, scopes=scopes)
     client = gspread.authorize(creds)
     return client.open_by_key(SPREADSHEET_ID).sheet1
 
